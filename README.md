@@ -112,6 +112,20 @@ It doesn't make sense to make the `wineboot` step reproducible, since it would j
 - **Changing the Template/Engine pin** (or `spaceOptimized`) on an existing instance replaces its shared `Contents/*` with the new version on the next activation and runs `WSS-wineboot` to refresh the prefix. `drive_c` and your saves are left alone. Each instance records what it was last built from in `Contents/SharedSupport/.sikarugir-nix-base`.
 - **Removing an instance** from `instances` (or changing its `name`) moves its `.app` to the macOS Trash on the next activation. Because the Wine prefix lives inside the `.app`, this includes its saves, which is why it's never deleted outright. Set `programs.sikarugir.removedInstances = "keep";` to leave removed `.app`s in place instead. Only `.app`s this module created are ever touched; they're tracked in `<instancesDirectory>/.sikarugir-nix-managed`.
 
+### Game shortcuts
+
+Install Windows Steam in an instance (for example `instances.Steam`, with `runPath = "/Program Files (x86)/Steam/steam.exe"`), install games from it, then give any of them a Mac app icon:
+
+```nix
+programs.sikarugir.shortcuts = {
+  Noita.steamAppId = 881100;
+  "Dwarf Fortress".steamAppId = 975370;
+  # instance = "Steam" is the default; icon = ./noita.png overrides the icon.
+};
+```
+
+Each becomes `<instancesDirectory>/<name>.app`. Opening it hands `steam://rungameid/<id>` to the instance, which starts Steam if needed and launches the game. Icons come from the game's own Steam icon when it's at least 128px, otherwise its Steam library cover art; mostly transparent ones get a light backing. Removing a shortcut deletes its `.app` (it holds no game data). The app ID is in the game's store URL, or in `steamapps/appmanifest_<id>.acf` inside the instance.
+
 ## Options
 
 All available options and settings are available in `lib/options.nix`. Option names are recovered from Sikarugir's `SikarugirWineAppConfig` Swift type rather than the legacy `Info.plist` values.

@@ -71,6 +71,15 @@ in
       '';
     };
 
+    shortcuts = lib.options.mkOption {
+      type = lib.types.attrsOf lib.types.anything;
+      default = { };
+      description = ''
+        Passed through to the home-manager module's `programs.sikarugir.shortcuts`
+        (see ../modules/home-manager.nix for the options each takes).
+      '';
+    };
+
     removedInstances = lib.options.mkOption {
       type = lib.types.enum [ "trash" "keep" ];
       default = "trash";
@@ -87,7 +96,7 @@ in
       imports = [ ./home-manager.nix ];
       programs.sikarugir = {
         enable = true;
-        inherit (cfg) instances removedInstances;
+        inherit (cfg) instances removedInstances shortcuts;
       } // lib.attrsets.optionalAttrs (cfg.instancesDirectory != null) {
         inherit (cfg) instancesDirectory;
       };
