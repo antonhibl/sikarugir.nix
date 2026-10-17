@@ -209,6 +209,10 @@ let
       DEST="''${1:?usage: sikarugir-activate-${cfg.name} <parent-directory>}"
       APP="$DEST/${cfg.name}.app"
       RUN_PATH=${lib.escapeShellArg cfg.runPath}
+      # Records which base derivation (and layout) this instance's shared
+      # Contents/* currently come from, so a pin change is always noticed.
+      BASE_STAMP="$APP/Contents/SharedSupport/.sikarugir-nix-base"
+      DESIRED_STAMP=${lib.escapeShellArg "${base} spaceOptimized=${lib.boolToString cfg.spaceOptimized}"}
 
       launcher_bin() {
         local name
@@ -241,8 +245,11 @@ with open(sys.argv[1], "rb") as f:
       if [ ! -e "$APP" ]; then
         echo "==> Building ${cfg.name}.app into $DEST"
         cp -a "${skeleton}/${cfg.name}.app" "$APP"
-        # -P: never follow a symlink encountered while recursing
-        chmod -R -P u+w "$APP"
+        # Neither GNU chmod (which home-manager's activation puts first on
+        # PATH) nor macOS's follows symlinks found while recursing, so the
+        # shared store paths are never touched. Don't pass BSD-only -P here:
+        # GNU chmod rejects it and the whole activation would fail.
+        chmod -R u+w "$APP"
 
         # Same as Configure's engine-install step: clear the quarantine
         # attribute Nix's own fetch (and this re-copy) leaves behind, or
@@ -254,30 +261,52 @@ with open(sys.argv[1], "rb") as f:
         echo "==> Running first-time WSS-wineprefixcreate (creates Contents/SharedSupport/prefix)"
         "$APP/Contents/MacOS/$(launcher_bin)" WSS-wineprefixcreate
         sleep 6
+        printf '%s\n' "$DESIRED_STAMP" > "$BASE_STAMP"
       else
         echo "==> $APP already exists! Re-syncing settings only."
 
-        ${lib.optionalString cfg.spaceOptimized ''
-        # If the Template/Engine pin changed since this instance was last
-        # activated, its top-level symlinks still point at the *old*
-        # (templateVersion, engine) base derivation, so we relink them at the
-        # new one and refresh (not recreate) the prefix against it.
-        CURRENT_BASE="$(readlink "$APP/Contents/Frameworks" 2>/dev/null || echo "")"
-        DESIRED_BASE="${base}/Contents/Frameworks"
-        if [ -L "$APP/Contents/Frameworks" ] && [ "$CURRENT_BASE" != "$DESIRED_BASE" ]; then
-          echo "    Template/Engine pin changed. Relinking shared Contents/* and refreshing the prefix"
-          for d in Configure.app Frameworks MacOS Resources; do
-            rm -rf "$APP/Contents/$d"
-            ln -s "${base}/Contents/$d" "$APP/Contents/$d"
+        # Work out which (Template, Engine, layout) this instance was last
+        # activated against. Newer instances record it in $BASE_STAMP.
+        # Instances activated by an older version of this module have no
+        # stamp; those were always spaceOptimized (symlinked) if their
+        # Frameworks is a symlink, so infer it from where that points.
+        # Anything else (an old copied instance) has an unknown base, so it
+        # gets refreshed once to be safe.
+        CURRENT_STAMP=""
+        if [ -f "$BASE_STAMP" ]; then
+          CURRENT_STAMP="$(cat "$BASE_STAMP")"
+        elif [ -L "$APP/Contents/Frameworks" ]; then
+          CURRENT_STAMP="$(dirname "$(dirname "$(readlink "$APP/Contents/Frameworks")")") spaceOptimized=true"
+        fi
+
+        if [ "$CURRENT_STAMP" != "$DESIRED_STAMP" ]; then
+          # The Template/Engine pin (or spaceOptimized) changed. Replace the
+          # shared Contents/* with the new base's, in whichever layout
+          # (symlinked or copied) is now configured, then refresh (not
+          # recreate) the prefix against it. drive_c is never touched.
+          echo "    Template/Engine pin or layout changed. Replacing shared Contents/* and refreshing the prefix"
+          for d in Configure.app Frameworks MacOS Resources SharedSupport/wine; do
+            target="$APP/Contents/$d"
+            if [ -L "$target" ]; then
+              rm -f "$target"
+            elif [ -e "$target" ]; then
+              chmod -R u+w "$target"
+              rm -rf "$target"
+            fi
+            ${if cfg.spaceOptimized then ''
+            ln -s "${base}/Contents/$d" "$target"
+            '' else ''
+            cp -a "${base}/Contents/$d" "$target"
+            chmod -R u+w "$target"
+            /usr/bin/xattr -dr com.apple.quarantine "$target" || true
+            ''}
           done
-          rm -f "$APP/Contents/SharedSupport/wine"
-          ln -s "${base}/Contents/SharedSupport/wine" "$APP/Contents/SharedSupport/wine"
 
           echo "    Running WSS-wineboot to refresh the existing prefix (drive_c is left untouched)"
           "$APP/Contents/MacOS/$(launcher_bin)" WSS-wineboot
           sleep 6
+          printf '%s\n' "$DESIRED_STAMP" > "$BASE_STAMP"
         fi
-        ''}
 
         chmod u+w "$APP/Contents/Info.plist"
       fi
@@ -287,7 +316,7 @@ with open(sys.argv[1], "rb") as f:
 
       ${lib.strings.optionalString (cfg.winetricks.verbs != [ ]) ''
       echo "==> Applying winetricks verbs: ${lib.strings.concatStringsSep ", " cfg.winetricks.verbs}"
-      ${lib.strings.concatStringsSep "\n" (verb: ''
+      ${lib.strings.concatMapStringsSep "\n" (verb: ''
         "$APP/Contents/MacOS/$(launcher_bin)" WSS-winetricks ${lib.escapeShellArg verb}
       '') cfg.winetricks.verbs}
       ''}

@@ -107,9 +107,16 @@ As such, this flake is split into two steps:
 
 It doesn't make sense to make the `wineboot` step reproducible, since it would just move the Wine installer and registry steps into Nix without increasing reproducibility, as installing a Windows game into the instances is unavoitably stateful and is the whole purpose of having a separate instance prefix.
 
+### Updating and removing instances
+
+- **Changing the Template/Engine pin** (or `spaceOptimized`) on an existing instance replaces its shared `Contents/*` with the new version on the next activation and runs `WSS-wineboot` to refresh the prefix. `drive_c` and your saves are left alone. Each instance records what it was last built from in `Contents/SharedSupport/.sikarugir-nix-base`.
+- **Removing an instance** from `instances` (or changing its `name`) moves its `.app` to the macOS Trash on the next activation. Because the Wine prefix lives inside the `.app`, this includes its saves, which is why it's never deleted outright. Set `programs.sikarugir.removedInstances = "keep";` to leave removed `.app`s in place instead. Only `.app`s this module created are ever touched; they're tracked in `<instancesDirectory>/.sikarugir-nix-managed`.
+
 ## Options
 
 All available options and settings are available in `lib/options.nix`. Option names are recovered from Sikarugir's `SikarugirWineAppConfig` Swift type rather than the legacy `Info.plist` values.
+
+`programs.sikarugir` itself also takes `instancesDirectory` (an absolute path; `~` isn't expanded) and `removedInstances` (`"trash"`, the default, or `"keep"`).
 
 ## Known limitations
 

@@ -70,6 +70,16 @@ in
         since this just forwards to it.
       '';
     };
+
+    removedInstances = lib.options.mkOption {
+      type = lib.types.enum [ "trash" "keep" ];
+      default = "trash";
+      description = ''
+        Passed through to the home-manager module's
+        `programs.sikarugir.removedInstances`: whether a removed instance's
+        `.app` is moved to the Trash or kept in place.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -77,7 +87,7 @@ in
       imports = [ ./home-manager.nix ];
       programs.sikarugir = {
         enable = true;
-        inherit (cfg) instances;
+        inherit (cfg) instances removedInstances;
       } // lib.attrsets.optionalAttrs (cfg.instancesDirectory != null) {
         inherit (cfg) instancesDirectory;
       };

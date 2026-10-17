@@ -26,6 +26,7 @@ jobs:
             trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
 
       - name: Update lockfile
+        id: pr
         uses: DeterminateSystems/update-flake-lock@da03c0f078bc4b2c37ee4f7e072d34bf8f188bb3 # v29
         with:
           commit-msg: "update flake.lock"
@@ -43,4 +44,5 @@ jobs:
           gh pr merge --rebase --delete-branch "$PR"
         env:
           PR: ${{ steps.pr.outputs.pull-request-url }}
+          GH_TOKEN: ${{ github.token }}
 
