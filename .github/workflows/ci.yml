@@ -76,15 +76,21 @@ jobs:
           fi
           echo "OK: $APP is a real directory"
 
-      - name: Verify Contents/{MacOS, Resources, Frameworks} are shared.
+      - name: Verify Frameworks/Resources are shared and MacOS/Configure.app are real
         run: |
-          for d in MacOS Resources Frameworks; do
+          for d in Resources Frameworks SharedSupport/wine; do
             if [ ! -L "$APP/Contents/$d" ]; then
               echo "FAIL: Contents/$d is NOT a symlink! spaceOptimized dedup isn't happening" >&2
               exit 1
             fi
           done
-          echo "OK: Configure.app/Frameworks/MacOS/Resources are all shared"
+          for d in MacOS Configure.app SharedSupport/Logs; do
+            if [ -L "$APP/Contents/$d" ] || [ ! -d "$APP/Contents/$d" ]; then
+              echo "FAIL: Contents/$d must be a real per-instance directory" >&2
+              exit 1
+            fi
+          done
+          echo "OK: Frameworks/Resources/wine shared; MacOS, Configure.app, Logs per-instance"
 
       - name: Check Gatekeeper assessment
         run: spctl --assess --type execute --verbose "$APP" || true

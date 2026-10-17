@@ -49,7 +49,7 @@
 
           # `nix build .#dedup-check`
           dedup-check = pkgs.runCommand "sikarugir-dedup-check" { } ''
-            for d in Frameworks MacOS Resources; do
+            for d in Frameworks Resources SharedSupport/wine; do
               a_link="$(readlink "${dedupA.skeleton}/${dedupDemo.a.name}.app/Contents/$d")"
               b_link="$(readlink "${dedupB.skeleton}/${dedupDemo.b.name}.app/Contents/$d")"
 
@@ -67,6 +67,11 @@
                 exit 1
               fi
             done
+
+            if [ -L "${dedupA.skeleton}/${dedupDemo.a.name}.app/Contents/MacOS" ]; then
+              echo "FAIL: Contents/MacOS must be a real per-instance copy"
+              exit 1
+            fi
 
             echo "OK: Frameworks/wine are shared, MacOS stays real per-instance" > "$out"
           '';

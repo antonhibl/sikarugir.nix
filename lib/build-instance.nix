@@ -120,6 +120,11 @@ let
       })
       cfg.extraPlist;
 
+  # Contents/* that every instance gets its own copy of, and the large
+  # ones that spaceOptimized instances share from the base via symlinks.
+  perInstanceDirs = [ "MacOS" "Configure.app" ];
+  sharedDirs = [ "Frameworks" "Resources" "SharedSupport/wine" ];
+
   plistPatchesFile = pkgs.writeText "sikarugir-info-plist-patches-${cfg.name}.json" (builtins.toJSON plistPatches);
   patchInfoPlistCommand = plistPath: ''${pkgs.python3}/bin/python3 ${patchInfoPlistScript} "${plistPath}" ${plistPatchesFile}'';
 
@@ -149,21 +154,27 @@ let
       APP="$PWD/${cfg.name}.app"
       mkdir -p "$APP/Contents"
 
+      # Always real, per-instance copies (they're tiny): the launcher and
+      # Configure.app work out which wrapper they belong to from their own
+      # executable's path, and when macOS launches an app it resolves that
+      # path through symlinks. A symlinked MacOS/ makes a Finder or `open`
+      # launch treat the read-only base in /nix/store as the app.
+      for d in ${lib.escapeShellArgs perInstanceDirs}; do
+        cp -a "${base}/Contents/$d" "$APP/Contents/$d"
+        chmod -R u+w "$APP/Contents/$d"
+      done
+
       ${if cfg.spaceOptimized then ''
         # Space-saving default (see the `spaceOptimized` option): these are
         # large, and never differ between two instances built from the same
         # (templateVersion, engine) pair, so they're symlinked straight out
         # of the shared base derivation instead of copied.
-        ln -s "${base}/Contents/Configure.app" "$APP/Contents/Configure.app"
         ln -s "${base}/Contents/Frameworks" "$APP/Contents/Frameworks"
-        ln -s "${base}/Contents/MacOS" "$APP/Contents/MacOS"
         ln -s "${base}/Contents/Resources" "$APP/Contents/Resources"
       '' else ''
-        cp -a "${base}/Contents/Configure.app" "$APP/Contents/Configure.app"
         cp -a "${base}/Contents/Frameworks" "$APP/Contents/Frameworks"
-        cp -a "${base}/Contents/MacOS" "$APP/Contents/MacOS"
         cp -a "${base}/Contents/Resources" "$APP/Contents/Resources"
-        chmod -R u+w "$APP/Contents/Configure.app" "$APP/Contents/Frameworks" "$APP/Contents/MacOS" "$APP/Contents/Resources"
+        chmod -R u+w "$APP/Contents/Frameworks" "$APP/Contents/Resources"
       ''}
 
       cp -a "${base}/Contents/PkgInfo" "$APP/Contents/PkgInfo"
@@ -250,6 +261,26 @@ with open(sys.argv[1], "rb") as f:
         return 1
       }
 
+      remove_entry() {
+        local target="$APP/Contents/$1"
+        if [ -L "$target" ]; then
+          rm -f "$target"
+        elif [ -e "$target" ]; then
+          chmod -R u+w "$target"
+          rm -rf "$target"
+        fi
+      }
+      replace_with_copy() {
+        remove_entry "$1"
+        cp -a "${base}/Contents/$1" "$APP/Contents/$1"
+        chmod -R u+w "$APP/Contents/$1"
+        /usr/bin/xattr -dr com.apple.quarantine "$APP/Contents/$1" 2>/dev/null || true
+      }
+      replace_with_link() {
+        remove_entry "$1"
+        ln -s "${base}/Contents/$1" "$APP/Contents/$1"
+      }
+
       mkdir -p "$DEST"
 
       if [ ! -e "$APP" ]; then
@@ -295,21 +326,11 @@ with open(sys.argv[1], "rb") as f:
           # (symlinked or copied) is now configured, then refresh (not
           # recreate) the prefix against it. drive_c is never touched.
           echo "    Template/Engine pin or layout changed. Replacing shared Contents/* and refreshing the prefix"
-          for d in Configure.app Frameworks MacOS Resources SharedSupport/wine; do
-            target="$APP/Contents/$d"
-            if [ -L "$target" ]; then
-              rm -f "$target"
-            elif [ -e "$target" ]; then
-              chmod -R u+w "$target"
-              rm -rf "$target"
-            fi
-            ${if cfg.spaceOptimized then ''
-            ln -s "${base}/Contents/$d" "$target"
-            '' else ''
-            cp -a "${base}/Contents/$d" "$target"
-            chmod -R u+w "$target"
-            /usr/bin/xattr -dr com.apple.quarantine "$target" || true
-            ''}
+          for d in ${lib.escapeShellArgs perInstanceDirs}; do
+            replace_with_copy "$d"
+          done
+          for d in ${lib.escapeShellArgs sharedDirs}; do
+            ${if cfg.spaceOptimized then ''replace_with_link "$d"'' else ''replace_with_copy "$d"''}
           done
 
           echo "    Running WSS-wineboot to refresh the existing prefix (drive_c is left untouched)"
@@ -317,6 +338,16 @@ with open(sys.argv[1], "rb") as f:
           sleep 6
           printf '%s\n' "$DESIRED_STAMP" > "$BASE_STAMP"
         fi
+
+        # Instances from older versions of this module had MacOS/ and
+        # Configure.app symlinked into the store, which breaks launching
+        # from Finder or `open`. Give them real copies.
+        for d in ${lib.escapeShellArgs perInstanceDirs}; do
+          if [ -L "$APP/Contents/$d" ]; then
+            echo "    Giving $d its own copy (needed to launch from Finder)"
+            replace_with_copy "$d"
+          fi
+        done
 
         chmod u+w "$APP/Contents/Info.plist"
       fi
