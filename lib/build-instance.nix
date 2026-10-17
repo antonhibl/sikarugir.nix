@@ -178,6 +178,16 @@ let
       cp -a "${base}/Contents/drive_c" "$APP/Contents/drive_c"
 
       mkdir -p "$APP/Contents/SharedSupport"
+      # Everything else Template keeps in SharedSupport (currently just the
+      # empty Logs/ that Contents/Logs points at, where the launcher writes
+      # its exec*.bat and run logs; without it every launch fails with
+      # "Error while writting file").
+      for entry in "${base}/Contents/SharedSupport/"* "${base}/Contents/SharedSupport/".[!.]*; do
+        [ -e "$entry" ] || continue
+        [ "$(basename "$entry")" = wine ] && continue
+        cp -a "$entry" "$APP/Contents/SharedSupport/"
+      done
+      mkdir -p "$APP/Contents/SharedSupport/Logs"
       ${if cfg.spaceOptimized then ''
         ln -s "${base}/Contents/SharedSupport/wine" "$APP/Contents/SharedSupport/wine"
       '' else ''
@@ -310,6 +320,10 @@ with open(sys.argv[1], "rb") as f:
 
         chmod u+w "$APP/Contents/Info.plist"
       fi
+
+      # The launcher writes into Logs/ on every run. Instances created by
+      # older versions of this module never got it, so make sure it's there.
+      mkdir -p "$APP/Contents/SharedSupport/Logs"
 
       # Always re-apply Info.plist patches on every activation.
       ${patchInfoPlist}
