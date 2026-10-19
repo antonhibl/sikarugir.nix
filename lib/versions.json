@@ -85,6 +85,10 @@
     "Template-1.0.21": {
       "hash": "sha256-u+mW5OQ3UxhIWVPQx4GLe0sKTcHxMwO8xYT5n3YC940=",
       "url": "https://github.com/Sikarugir-App/Template/releases/download/v1.0/Template-1.0.21.tar.xz"
+    },
+    "Template-1.0.24": {
+      "hash": "sha256-S1+J7rnvE5k2vfrTPZtCCwXqRZfLfWM3ZnT3qOFxMhw=",
+      "url": "https://github.com/Sikarugir-App/Template/releases/download/v1.0/Template-1.0.24.tar.xz"
     }
   }
 }
